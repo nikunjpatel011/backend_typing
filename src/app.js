@@ -12,10 +12,53 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 
 dotenv.config();
 
+function normalizeOrigin(origin) {
+  const value = String(origin || "").trim();
+
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return value.replace(/\/+$/, "");
+  }
+}
+
+function expandOriginVariants(origin) {
+  const normalizedOrigin = normalizeOrigin(origin);
+
+  if (!normalizedOrigin) {
+    return [];
+  }
+
+  const variants = new Set([normalizedOrigin]);
+
+  try {
+    const url = new URL(normalizedOrigin);
+    const isLocalOrigin = ["localhost", "127.0.0.1"].includes(url.hostname);
+    const port = url.port ? `:${url.port}` : "";
+
+    if (!isLocalOrigin && url.hostname.startsWith("www.")) {
+      variants.add(`${url.protocol}//${url.hostname.slice(4)}${port}`);
+    }
+
+    if (!isLocalOrigin && !url.hostname.startsWith("www.")) {
+      variants.add(`${url.protocol}//www.${url.hostname}${port}`);
+    }
+  } catch {
+    return [...variants];
+  }
+
+  return [...variants];
+}
+
 function parseConfiguredOrigins(value) {
   return String(value || "")
     .split(",")
-    .map((origin) => origin.trim())
+    .flatMap((origin) => expandOriginVariants(origin))
     .filter(Boolean);
 }
 
