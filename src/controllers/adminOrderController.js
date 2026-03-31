@@ -1,8 +1,12 @@
 import { Order } from "../models/Order.js";
-import { Product } from "../models/Product.js";
 import { AppError } from "../utils/appError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureOrderCustomerCompatibility } from "../utils/orderCustomerCompatibility.js";
+import {
+  assertOrderItemsInStock,
+  reserveOrderItemsStock,
+  restoreOrderItemsStock,
+} from "../utils/orderStock.js";
 
 async function adjustStockForStatusChange(order, nextStatus) {
   if (order.status === nextStatus) {
@@ -10,35 +14,16 @@ async function adjustStockForStatusChange(order, nextStatus) {
   }
 
   if (nextStatus === "cancelled" && order.status !== "cancelled") {
-    await Promise.all(
-      order.items.map((item) =>
-        Product.findByIdAndUpdate(item.product, {
-          $inc: { stock: item.quantity },
-        }),
-      ),
-    );
+    await restoreOrderItemsStock(order);
     return;
   }
 
   if (order.status === "cancelled" && nextStatus !== "cancelled") {
-    for (const item of order.items) {
-      const product = await Product.findById(item.product);
-
-      if (!product || product.stock < item.quantity) {
-        throw new AppError(
-          `Cannot move order out of cancelled because ${item.name} is out of stock`,
-          400,
-        );
-      }
-    }
-
-    await Promise.all(
-      order.items.map((item) =>
-        Product.findByIdAndUpdate(item.product, {
-          $inc: { stock: -item.quantity },
-        }),
-      ),
+    await assertOrderItemsInStock(
+      order,
+      (item) => `Cannot move order out of cancelled because ${item.name} is out of stock`,
     );
+    await reserveOrderItemsStock(order);
   }
 }
 
@@ -50,35 +35,16 @@ async function adjustStockForReturnChange(order, nextStatus) {
   }
 
   if (nextStatus === "received" && currentStatus !== "received") {
-    await Promise.all(
-      order.items.map((item) =>
-        Product.findByIdAndUpdate(item.product, {
-          $inc: { stock: item.quantity },
-        }),
-      ),
-    );
+    await restoreOrderItemsStock(order);
     return;
   }
 
   if (currentStatus === "received" && nextStatus !== "received") {
-    for (const item of order.items) {
-      const product = await Product.findById(item.product);
-
-      if (!product || product.stock < item.quantity) {
-        throw new AppError(
-          `Cannot reopen return because ${item.name} is out of stock`,
-          400,
-        );
-      }
-    }
-
-    await Promise.all(
-      order.items.map((item) =>
-        Product.findByIdAndUpdate(item.product, {
-          $inc: { stock: -item.quantity },
-        }),
-      ),
+    await assertOrderItemsInStock(
+      order,
+      (item) => `Cannot reopen return because ${item.name} is out of stock`,
     );
+    await reserveOrderItemsStock(order);
   }
 }
 

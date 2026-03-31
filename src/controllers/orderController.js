@@ -6,6 +6,7 @@ import { AppError } from "../utils/appError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureOrderCustomerCompatibility } from "../utils/orderCustomerCompatibility.js";
 import { calculateOrderTotals } from "../utils/orderPricing.js";
+import { restoreOrderItemsStock } from "../utils/orderStock.js";
 
 function generateOrderNumber() {
   const timestamp = Date.now().toString().slice(-8);
@@ -47,6 +48,30 @@ function assertReturnEligibility(order) {
       400,
     );
   }
+}
+
+function getCustomerCancellationErrorMessage(status) {
+  switch (status) {
+    case "confirmed":
+      return "Your order is confirmed and can no longer be cancelled";
+    case "shipped":
+      return "Your order has already been shipped and can no longer be cancelled";
+    case "delivered":
+      return "Your order has already been delivered and can no longer be cancelled";
+    case "cancelled":
+      return "This order is already cancelled";
+    case "pending":
+    default:
+      return "Only pending orders can be cancelled";
+  }
+}
+
+function assertCustomerCanCancelOrder(order) {
+  if (order.status === "pending") {
+    return;
+  }
+
+  throw new AppError(getCustomerCancellationErrorMessage(order.status), 400);
 }
 
 export const createOrder = asyncHandler(async (req, res) => {
@@ -148,6 +173,30 @@ export const getMyOrderById = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
+    data: serializeOrder(order),
+  });
+});
+
+export const cancelMyOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findOne({
+    _id: req.params.orderId,
+    user: req.user.id,
+  });
+
+  if (!order) {
+    throw new AppError("Order not found", 404);
+  }
+
+  ensureOrderCustomerCompatibility(order);
+  assertCustomerCanCancelOrder(order);
+  await restoreOrderItemsStock(order);
+  order.status = "cancelled";
+  order.deliveredAt = null;
+  await order.save();
+
+  res.json({
+    success: true,
+    message: "Order cancelled successfully",
     data: serializeOrder(order),
   });
 });

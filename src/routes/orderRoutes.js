@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { body, param } from "express-validator";
 import {
+  cancelMyOrder,
   createOrder,
   getMyOrderById,
   getMyOrders,
@@ -19,6 +20,12 @@ router.get(
   [param("orderId").isMongoId().withMessage("Invalid order id")],
   validateRequest,
   getMyOrderById,
+);
+router.patch(
+  "/:orderId/cancel",
+  [param("orderId").isMongoId().withMessage("Invalid order id")],
+  validateRequest,
+  cancelMyOrder,
 );
 router.post(
   "/:orderId/return-request",
