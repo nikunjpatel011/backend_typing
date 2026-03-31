@@ -4,15 +4,28 @@ import { User } from "../models/User.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const getDashboardSummary = asyncHandler(async (_req, res) => {
-  const [productCount, userCount, orderCount, revenueStats, recentOrders, statusCounts] =
-    await Promise.all([
+  const [
+    productCount,
+    userCount,
+    orderCount,
+    returnRequestCount,
+    revenueStats,
+    recentOrders,
+    statusCounts,
+  ] = await Promise.all([
       Product.countDocuments(),
       User.countDocuments(),
       Order.countDocuments(),
+      Order.countDocuments({
+        "returnRequest.status": {
+          $in: ["requested", "received", "rejected"],
+        },
+      }),
       Order.aggregate([
         {
           $match: {
             status: { $ne: "cancelled" },
+            "returnRequest.status": { $ne: "received" },
           },
         },
         {
@@ -40,6 +53,7 @@ export const getDashboardSummary = asyncHandler(async (_req, res) => {
         totalProducts: productCount,
         totalUsers: userCount,
         totalOrders: orderCount,
+        returnRequests: returnRequestCount,
         totalRevenue: revenueStats[0]?.revenue || 0,
       },
       recentOrders: recentOrders.map((order) => order.toJSON()),

@@ -17,10 +17,11 @@ import { uploadProductImages } from "../controllers/adminUploadController.js";
 import {
   getAdminOrderById,
   getAdminOrders,
+  updateReturnStatus,
   updateOrderStatus,
 } from "../controllers/adminOrderController.js";
 import { getAdminUsers } from "../controllers/adminUserController.js";
-import { ORDER_STATUSES } from "../constants/order.js";
+import { ORDER_STATUSES, RETURN_STATUSES } from "../constants/order.js";
 import { protectAdmin } from "../middleware/auth.js";
 import { validateRequest } from "../middleware/validateRequest.js";
 
@@ -131,6 +132,18 @@ router.patch(
   ],
   validateRequest,
   updateOrderStatus,
+);
+router.patch(
+  "/orders/:orderId/return",
+  [
+    param("orderId").isMongoId().withMessage("Invalid order id"),
+    body("status")
+      .isIn(RETURN_STATUSES)
+      .withMessage(`Return status must be one of: ${RETURN_STATUSES.join(", ")}`),
+    body("adminNotes").optional().isString(),
+  ],
+  validateRequest,
+  updateReturnStatus,
 );
 
 router.get("/users", getAdminUsers);

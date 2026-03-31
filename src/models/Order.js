@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { ORDER_STATUSES } from "../constants/order.js";
+import { ORDER_STATUSES, RETURN_STATUSES } from "../constants/order.js";
 import { baseSchemaOptions } from "../utils/schemaOptions.js";
 
 const orderItemSchema = new mongoose.Schema(
@@ -89,6 +89,41 @@ const orderSchema = new mongoose.Schema(
         required: true,
         trim: true,
       },
+      fullName: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      fullAddress: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      city: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      state: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      zipCode: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      country: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      phoneNumber: {
+        type: String,
+        required: true,
+        trim: true,
+      },
     },
     items: {
       type: [orderItemSchema],
@@ -98,6 +133,35 @@ const orderSchema = new mongoose.Schema(
       type: String,
       enum: ORDER_STATUSES,
       default: "pending",
+    },
+    deliveredAt: {
+      type: Date,
+      default: null,
+    },
+    returnRequest: {
+      status: {
+        type: String,
+        enum: RETURN_STATUSES,
+        default: "none",
+      },
+      reason: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+      requestedAt: {
+        type: Date,
+        default: null,
+      },
+      processedAt: {
+        type: Date,
+        default: null,
+      },
+      adminNotes: {
+        type: String,
+        default: "",
+        trim: true,
+      },
     },
     subtotal: {
       type: Number,
