@@ -1,4 +1,5 @@
 import { Product } from "../models/Product.js";
+import { Review } from "../models/Review.js";
 import { AppError } from "../utils/appError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { deleteCloudinaryImages } from "../utils/cloudinary.js";
@@ -58,8 +59,12 @@ function buildProductPayload(body, existingProduct = null) {
     tags: normalizeArray(body.tags),
     isNew: Boolean(body.isNew),
     isTrending: Boolean(body.isTrending),
-    rating: body.rating ? Number(body.rating) : 0,
-    reviewCount: body.reviewCount ? Number(body.reviewCount) : 0,
+    rating:
+      body.rating !== undefined ? Number(body.rating) : existingProduct?.rating || 0,
+    reviewCount:
+      body.reviewCount !== undefined
+        ? Number(body.reviewCount)
+        : existingProduct?.reviewCount || 0,
   };
 }
 
@@ -129,7 +134,12 @@ export const deleteProduct = asyncHandler(async (req, res) => {
     throw new AppError("Product not found", 404);
   }
 
+  const reviews = await Review.find({ product: product.id }).select("imagePublicIds");
+  const reviewImagePublicIds = reviews.flatMap((review) => review.imagePublicIds || []);
+
   await deleteCloudinaryImages(product.imagePublicIds || []);
+  await deleteCloudinaryImages(reviewImagePublicIds);
+  await Review.deleteMany({ product: product.id });
   await product.deleteOne();
 
   res.json({

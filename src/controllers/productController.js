@@ -1,5 +1,6 @@
 import { Product } from "../models/Product.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { getApprovedProductReviews } from "../utils/reviews.js";
 
 function normalizeCsv(value) {
   if (!value) {
@@ -135,7 +136,10 @@ export const getProducts = asyncHandler(async (req, res) => {
 });
 
 export const getProductById = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.productId);
+  const [product, reviews] = await Promise.all([
+    Product.findById(req.params.productId),
+    getApprovedProductReviews(req.params.productId),
+  ]);
 
   if (!product) {
     return res.status(404).json({
@@ -146,6 +150,9 @@ export const getProductById = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: product.toJSON(),
+    data: {
+      ...product.toJSON(),
+      reviews,
+    },
   });
 });

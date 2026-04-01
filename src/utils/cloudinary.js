@@ -33,11 +33,11 @@ function signParams(params, apiSecret) {
     .digest("hex");
 }
 
-function getUploadFolder() {
-  return process.env.CLOUDINARY_FOLDER || "typing-clothing/products";
+function getUploadFolder(folder) {
+  return folder || process.env.CLOUDINARY_FOLDER || "typing-clothing/products";
 }
 
-export async function uploadImageDataUri(dataUri) {
+export async function uploadImageDataUri(dataUri, options = {}) {
   if (typeof dataUri !== "string" || !dataUri.startsWith("data:image/")) {
     throw new AppError("Each uploaded file must be an image data URL.", 400);
   }
@@ -45,7 +45,7 @@ export async function uploadImageDataUri(dataUri) {
   const { cloudName, apiKey, apiSecret } = getCloudinaryCredentials();
   const timestamp = Math.floor(Date.now() / 1000);
   const paramsToSign = {
-    folder: getUploadFolder(),
+    folder: getUploadFolder(options.folder),
     timestamp,
   };
   const signature = signParams(paramsToSign, apiSecret);
@@ -76,8 +76,10 @@ export async function uploadImageDataUri(dataUri) {
   };
 }
 
-export async function uploadMultipleImages(dataUris) {
-  return Promise.all(dataUris.map((dataUri) => uploadImageDataUri(dataUri)));
+export async function uploadMultipleImages(dataUris, options = {}) {
+  return Promise.all(
+    dataUris.map((dataUri) => uploadImageDataUri(dataUri, options)),
+  );
 }
 
 export async function deleteCloudinaryImage(publicId) {

@@ -7,6 +7,7 @@ import {
   getMyOrders,
   requestOrderReturn,
 } from "../controllers/orderController.js";
+import { createOrderReview } from "../controllers/reviewController.js";
 import { protectUser } from "../middleware/auth.js";
 import { validateRequest } from "../middleware/validateRequest.js";
 
@@ -38,6 +39,19 @@ router.post(
   ],
   validateRequest,
   requestOrderReturn,
+);
+router.post(
+  "/:orderId/reviews",
+  [
+    param("orderId").isMongoId().withMessage("Invalid order id"),
+    body("orderItemId").isMongoId().withMessage("Invalid order item id"),
+    body("productId").isMongoId().withMessage("Invalid product id"),
+    body("rating")
+      .isInt({ min: 1, max: 5 })
+      .withMessage("Rating must be between 1 and 5"),
+  ],
+  validateRequest,
+  createOrderReview,
 );
 router.post(
   "/",

@@ -20,6 +20,10 @@ import {
   updateReturnStatus,
   updateOrderStatus,
 } from "../controllers/adminOrderController.js";
+import {
+  deleteReview,
+  getAdminReviews,
+} from "../controllers/adminReviewController.js";
 import { getAdminUsers } from "../controllers/adminUserController.js";
 import { ORDER_STATUSES, RETURN_STATUSES } from "../constants/order.js";
 import { protectAdmin } from "../middleware/auth.js";
@@ -144,6 +148,14 @@ router.patch(
   ],
   validateRequest,
   updateReturnStatus,
+);
+
+router.get("/reviews", getAdminReviews);
+router.delete(
+  "/reviews/:reviewId",
+  [param("reviewId").isMongoId().withMessage("Invalid review id")],
+  validateRequest,
+  deleteReview,
 );
 
 router.get("/users", getAdminUsers);

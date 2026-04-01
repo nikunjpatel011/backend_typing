@@ -6,6 +6,7 @@ import { AppError } from "../utils/appError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureOrderCustomerCompatibility } from "../utils/orderCustomerCompatibility.js";
 import { calculateOrderTotals } from "../utils/orderPricing.js";
+import { attachReviewsToOrder } from "../utils/reviews.js";
 import { restoreOrderItemsStock } from "../utils/orderStock.js";
 
 function generateOrderNumber() {
@@ -173,7 +174,7 @@ export const getMyOrderById = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: serializeOrder(order),
+    data: await attachReviewsToOrder(order, req.user.id),
   });
 });
 
