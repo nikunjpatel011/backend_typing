@@ -11,6 +11,14 @@ function sanitizeDocument(document) {
   return data;
 }
 
+function normalizeEmailAddress(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function isEmailAddress(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
 async function ensureUserResources(userId) {
   await Promise.all([
     Cart.findOneAndUpdate(
@@ -27,18 +35,18 @@ async function ensureUserResources(userId) {
 }
 
 export const registerUser = asyncHandler(async (req, res) => {
-  const { name, contactNumber, pinCode, password } = req.body;
+  const { name, email, password } = req.body;
+  const normalizedEmail = normalizeEmailAddress(email);
 
-  const existingUser = await User.findOne({ contactNumber });
+  const existingUser = await User.findOne({ email: normalizedEmail });
 
   if (existingUser) {
-    throw new AppError("An account with this contact number already exists", 409);
+    throw new AppError("An account with this email already exists", 409);
   }
 
   const user = await User.create({
-    name,
-    contactNumber,
-    pinCode,
+    name: String(name).trim(),
+    email: normalizedEmail,
     password,
   });
 
@@ -55,12 +63,19 @@ export const registerUser = asyncHandler(async (req, res) => {
 });
 
 export const loginUser = asyncHandler(async (req, res) => {
-  const { contactNumber, password } = req.body;
+  const { password } = req.body;
+  const identifier = String(req.body.email || req.body.contactNumber || "").trim();
+  const normalizedEmail = normalizeEmailAddress(identifier);
+  const query = isEmailAddress(identifier)
+    ? { email: normalizedEmail }
+    : {
+        $or: [{ email: normalizedEmail }, { contactNumber: identifier }],
+      };
 
-  const user = await User.findOne({ contactNumber }).select("+password");
+  const user = await User.findOne(query).select("+password");
 
   if (!user || !(await user.comparePassword(password))) {
-    throw new AppError("Invalid contact number or password", 401);
+    throw new AppError("Invalid email or password", 401);
   }
 
   await ensureUserResources(user.id);
@@ -83,8 +98,22 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
 });
 
 export const updateProfile = asyncHandler(async (req, res) => {
-  const { name, contactNumber, pinCode, password, profileImage } = req.body;
+  const { name, email, contactNumber, pinCode, password, profileImage } = req.body;
   const user = req.user;
+
+  if (typeof email === "string") {
+    const normalizedEmail = normalizeEmailAddress(email);
+
+    if (normalizedEmail && normalizedEmail !== user.email) {
+      const existingEmailUser = await User.findOne({ email: normalizedEmail });
+
+      if (existingEmailUser) {
+        throw new AppError("This email is already in use", 409);
+      }
+    }
+
+    user.email = normalizedEmail;
+  }
 
   if (contactNumber && contactNumber !== user.contactNumber) {
     const existingContactUser = await User.findOne({ contactNumber });
@@ -97,7 +126,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
   }
 
   if (typeof name === "string") {
-    user.name = name;
+    user.name = name.trim();
   }
 
   if (typeof pinCode === "string") {

@@ -9,15 +9,21 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    email: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      lowercase: true,
+    },
     contactNumber: {
       type: String,
-      required: true,
       unique: true,
+      sparse: true,
       trim: true,
     },
     pinCode: {
       type: String,
-      required: true,
       trim: true,
     },
     profileImage: {

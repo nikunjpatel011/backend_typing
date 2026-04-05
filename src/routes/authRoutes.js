@@ -15,6 +15,23 @@ const nameValidator = body("name")
   .trim()
   .notEmpty()
   .withMessage("Name is required");
+const emailValidator = body("email")
+  .trim()
+  .isEmail()
+  .withMessage("Enter a valid email address")
+  .normalizeEmail();
+const loginIdentifierValidator = body().custom((_value, { req }) => {
+  const identifier = String(req.body.email || req.body.contactNumber || "").trim();
+
+  if (
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) ||
+    /^[0-9+\-\s()]{10,15}$/.test(identifier)
+  ) {
+    return true;
+  }
+
+  throw new Error("Enter a valid email address");
+});
 const contactNumberValidator = body("contactNumber")
   .trim()
   .matches(/^[0-9+\-\s()]{10,15}$/)
@@ -30,14 +47,14 @@ const passwordValidator = body("password")
 
 router.post(
   "/register",
-  [nameValidator, contactNumberValidator, pinCodeValidator, passwordValidator],
+  [nameValidator, emailValidator, passwordValidator],
   validateRequest,
   registerUser,
 );
 
 router.post(
   "/login",
-  [contactNumberValidator, passwordValidator],
+  [loginIdentifierValidator, passwordValidator],
   validateRequest,
   loginUser,
 );
@@ -49,13 +66,19 @@ router.put(
   protectUser,
   [
     body("name").optional().trim().notEmpty().withMessage("Name cannot be empty"),
-    body("contactNumber")
+    body("email")
       .optional()
+      .trim()
+      .isEmail()
+      .withMessage("Enter a valid email address")
+      .normalizeEmail(),
+    body("contactNumber")
+      .optional({ values: "falsy" })
       .trim()
       .matches(/^[0-9+\-\s()]{10,15}$/)
       .withMessage("Contact number must be 10 to 15 characters"),
     body("pinCode")
-      .optional()
+      .optional({ values: "falsy" })
       .trim()
       .matches(/^[0-9]{6}$/)
       .withMessage("Pin code must be 6 digits"),
