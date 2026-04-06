@@ -35,16 +35,16 @@ async function adjustStockForReturnChange(order, nextStatus) {
   }
 
   if (nextStatus === "received" && currentStatus !== "received") {
-    await restoreOrderItemsStock(order);
+    await assertOrderItemsInStock(
+      order,
+      (item) => `Cannot approve replacement because ${item.name} is out of stock`,
+    );
+    await reserveOrderItemsStock(order);
     return;
   }
 
   if (currentStatus === "received" && nextStatus !== "received") {
-    await assertOrderItemsInStock(
-      order,
-      (item) => `Cannot reopen return because ${item.name} is out of stock`,
-    );
-    await reserveOrderItemsStock(order);
+    await restoreOrderItemsStock(order);
   }
 }
 
@@ -116,14 +116,14 @@ export const updateReturnStatus = asyncHandler(async (req, res) => {
   }
 
   if (order.status !== "delivered") {
-    throw new AppError("Return updates are available only for delivered orders", 400);
+    throw new AppError("Replacement updates are available only for delivered orders", 400);
   }
 
   const currentStatus = order.returnRequest?.status || "none";
   const nextStatus = req.body.status;
 
   if (currentStatus === "none" && nextStatus !== "none") {
-    throw new AppError("No return request exists for this order", 400);
+    throw new AppError("No replacement request exists for this order", 400);
   }
 
   await adjustStockForReturnChange(order, nextStatus);
@@ -153,7 +153,7 @@ export const updateReturnStatus = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: "Return status updated successfully",
+    message: "Replacement status updated successfully",
     data: order.toJSON(),
   });
 });

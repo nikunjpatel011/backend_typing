@@ -25,7 +25,6 @@ export const getDashboardSummary = asyncHandler(async (_req, res) => {
         {
           $match: {
             status: { $ne: "cancelled" },
-            "returnRequest.status": { $ne: "received" },
           },
         },
         {

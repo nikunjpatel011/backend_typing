@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { body, param } from "express-validator";
+import { REPLACEMENT_REASONS } from "../constants/order.js";
 import {
   cancelMyOrder,
   createOrder,
@@ -34,8 +35,8 @@ router.post(
     param("orderId").isMongoId().withMessage("Invalid order id"),
     body("reason")
       .trim()
-      .isLength({ min: 10, max: 400 })
-      .withMessage("Return reason must be between 10 and 400 characters"),
+      .isIn(REPLACEMENT_REASONS)
+      .withMessage(`Replacement reason must be one of: ${REPLACEMENT_REASONS.join(", ")}`),
   ],
   validateRequest,
   requestOrderReturn,

@@ -1,5 +1,5 @@
 import { Cart } from "../models/Cart.js";
-import { RETURN_WINDOW_DAYS } from "../constants/order.js";
+import { REPLACEMENT_REASONS } from "../constants/order.js";
 import { Order } from "../models/Order.js";
 import { Product } from "../models/Product.js";
 import { AppError } from "../utils/appError.js";
@@ -21,58 +21,60 @@ function serializeOrder(order) {
   return typeof order.toJSON === "function" ? order.toJSON() : order;
 }
 
-function getReturnWindowEnd(deliveredAt) {
-  if (!deliveredAt) {
-    return null;
-  }
+const CUSTOMER_ORDER_CANCELLATION_WINDOW_HOURS = 12;
+const CUSTOMER_ORDER_CANCELLATION_WINDOW_MS =
+  CUSTOMER_ORDER_CANCELLATION_WINDOW_HOURS * 60 * 60 * 1000;
 
-  return new Date(
-    new Date(deliveredAt).getTime() + RETURN_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-  );
-}
-
-function assertReturnEligibility(order) {
+function assertReplacementEligibility(order) {
   if (order.status !== "delivered") {
-    throw new AppError("Return is available only after delivery", 400);
+    throw new AppError("Replacement is available only after delivery", 400);
   }
 
   if (order.returnRequest?.status && order.returnRequest.status !== "none") {
-    throw new AppError("A return request already exists for this order", 400);
-  }
-
-  const deliveredAt = order.deliveredAt || order.updatedAt;
-  const returnWindowEnd = getReturnWindowEnd(deliveredAt);
-
-  if (!returnWindowEnd || returnWindowEnd.getTime() < Date.now()) {
-    throw new AppError(
-      `Return window closed after ${RETURN_WINDOW_DAYS} days from delivery`,
-      400,
-    );
+    throw new AppError("A replacement request already exists for this order", 400);
   }
 }
 
-function getCustomerCancellationErrorMessage(status) {
-  switch (status) {
+function hasCustomerCancellationWindowExpired(order) {
+  const createdAtTimestamp = new Date(order.createdAt).getTime();
+
+  if (!Number.isFinite(createdAtTimestamp)) {
+    return true;
+  }
+
+  return Date.now() - createdAtTimestamp > CUSTOMER_ORDER_CANCELLATION_WINDOW_MS;
+}
+
+function getCustomerCancellationErrorMessage(order) {
+  switch (order.status) {
+    case "pending":
     case "confirmed":
-      return "Your order is confirmed and can no longer be cancelled";
+      return `Orders can only be cancelled within ${CUSTOMER_ORDER_CANCELLATION_WINDOW_HOURS} hours of being placed`;
     case "shipped":
       return "Your order has already been shipped and can no longer be cancelled";
     case "delivered":
       return "Your order has already been delivered and can no longer be cancelled";
     case "cancelled":
       return "This order is already cancelled";
-    case "pending":
     default:
-      return "Only pending orders can be cancelled";
+      return "This order can no longer be cancelled";
   }
 }
 
 function assertCustomerCanCancelOrder(order) {
-  if (order.status === "pending") {
-    return;
+  if (order.status === "shipped" || order.status === "delivered" || order.status === "cancelled") {
+    throw new AppError(getCustomerCancellationErrorMessage(order), 400);
   }
 
-  throw new AppError(getCustomerCancellationErrorMessage(order.status), 400);
+  if (order.status === "pending" || order.status === "confirmed") {
+    if (!hasCustomerCancellationWindowExpired(order)) {
+      return;
+    }
+
+    throw new AppError(getCustomerCancellationErrorMessage(order), 400);
+  }
+
+  throw new AppError("This order can no longer be cancelled", 400);
 }
 
 export const createOrder = asyncHandler(async (req, res) => {
@@ -212,8 +214,12 @@ export const requestOrderReturn = asyncHandler(async (req, res) => {
     throw new AppError("Order not found", 404);
   }
 
-  assertReturnEligibility(order);
+  assertReplacementEligibility(order);
   ensureOrderCustomerCompatibility(order);
+
+  if (!REPLACEMENT_REASONS.includes(req.body.reason)) {
+    throw new AppError("Replacement reason is invalid", 400);
+  }
 
   order.returnRequest = {
     status: "requested",
@@ -226,7 +232,7 @@ export const requestOrderReturn = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: "Return request submitted successfully",
+    message: "Replacement request submitted successfully",
     data: serializeOrder(order),
   });
 });

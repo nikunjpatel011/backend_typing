@@ -143,7 +143,7 @@ router.patch(
     param("orderId").isMongoId().withMessage("Invalid order id"),
     body("status")
       .isIn(RETURN_STATUSES)
-      .withMessage(`Return status must be one of: ${RETURN_STATUSES.join(", ")}`),
+      .withMessage(`Replacement status must be one of: ${RETURN_STATUSES.join(", ")}`),
     body("adminNotes").optional().isString(),
   ],
   validateRequest,
