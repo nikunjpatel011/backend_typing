@@ -6,8 +6,17 @@ import { AppError } from "../utils/appError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureOrderCustomerCompatibility } from "../utils/orderCustomerCompatibility.js";
 import { calculateOrderTotals } from "../utils/orderPricing.js";
+import {
+  amountToPaise,
+  captureRazorpayPayment,
+  createRazorpayOrder,
+  fetchRazorpayPayment,
+  getRazorpayKeyId,
+  verifyRazorpaySignature,
+} from "../utils/razorpay.js";
 import { attachReviewsToOrder } from "../utils/reviews.js";
 import { restoreOrderItemsStock } from "../utils/orderStock.js";
+import { serializeOrderRecord } from "../utils/serializeOrder.js";
 
 function generateOrderNumber() {
   const timestamp = Date.now().toString().slice(-8);
@@ -17,8 +26,12 @@ function generateOrderNumber() {
   return `ORD-${timestamp}${randomChunk}`;
 }
 
-function serializeOrder(order) {
-  return typeof order.toJSON === "function" ? order.toJSON() : order;
+function generateRazorpayReceipt() {
+  const timestamp = Date.now().toString().slice(-10);
+  const randomChunk = Math.floor(Math.random() * 10000)
+    .toString()
+    .padStart(4, "0");
+  return `tc${timestamp}${randomChunk}`;
 }
 
 const CUSTOMER_ORDER_CANCELLATION_WINDOW_HOURS = 12;
@@ -77,14 +90,18 @@ function assertCustomerCanCancelOrder(order) {
   throw new AppError("This order can no longer be cancelled", 400);
 }
 
-export const createOrder = asyncHandler(async (req, res) => {
-  const cart = await Cart.findOne({ user: req.user.id }).populate("items.product");
+async function getCartWithProducts(userId) {
+  const cart = await Cart.findOne({ user: userId }).populate("items.product");
 
   if (!cart || cart.items.length === 0) {
     throw new AppError("Your cart is empty", 400);
   }
 
-  const normalizedItems = cart.items.map((item) => {
+  return cart;
+}
+
+function getNormalizedCartItems(cart) {
+  return cart.items.map((item) => {
     const product = item.product;
 
     if (!product) {
@@ -107,38 +124,53 @@ export const createOrder = asyncHandler(async (req, res) => {
       lineTotal: product.price * item.quantity,
     };
   });
-  const totals = calculateOrderTotals(normalizedItems);
-  const customer = {
-    name: req.body.name || req.body.fullName || req.user.name,
-    contactNumber:
-      req.body.contactNumber || req.body.phoneNumber || req.user.contactNumber,
-    pinCode: req.body.pinCode || req.body.zipCode || req.user.pinCode,
-    fullName: req.body.fullName || req.body.name || req.user.name,
-    fullAddress: req.body.fullAddress,
-    city: req.body.city,
-    state: req.body.state,
-    zipCode: req.body.zipCode || req.body.pinCode || req.user.pinCode,
-    country: req.body.country,
-    phoneNumber:
-      req.body.phoneNumber || req.body.contactNumber || req.user.contactNumber,
-  };
+}
 
+function buildCustomer(user, body) {
+  return {
+    name: String(body.name || body.fullName || user.name || "").trim(),
+    contactNumber: String(
+      body.contactNumber || body.phoneNumber || user.contactNumber || "",
+    ).trim(),
+    pinCode: String(body.pinCode || body.zipCode || user.pinCode || "").trim(),
+    fullName: String(body.fullName || body.name || user.name || "").trim(),
+    fullAddress: String(body.fullAddress || "").trim(),
+    city: String(body.city || "").trim(),
+    state: String(body.state || "").trim(),
+    zipCode: String(body.zipCode || body.pinCode || user.pinCode || "").trim(),
+    country: String(body.country || "").trim(),
+    phoneNumber: String(
+      body.phoneNumber || body.contactNumber || user.contactNumber || "",
+    ).trim(),
+  };
+}
+
+async function persistPaidOrder({
+  user,
+  cart,
+  customer,
+  items,
+  totals,
+  notes,
+  payment,
+}) {
   const order = await Order.create({
     orderNumber: generateOrderNumber(),
-    user: req.user.id,
+    user: user.id,
     customer,
-    items: normalizedItems,
+    items,
     subtotal: totals.subtotal,
     discount: totals.discount,
     shipping: totals.shipping,
     tax: totals.tax,
     total: totals.total,
-    paymentMethod: req.body.paymentMethod || "cod",
-    notes: req.body.notes || "",
+    paymentMethod: "razorpay",
+    payment,
+    notes,
   });
 
   await Promise.all(
-    normalizedItems.map((item) =>
+    items.map((item) =>
       Product.findByIdAndUpdate(item.product, {
         $inc: { stock: -item.quantity },
       }),
@@ -148,10 +180,125 @@ export const createOrder = asyncHandler(async (req, res) => {
   cart.items = [];
   await cart.save();
 
+  return order;
+}
+
+export const createCheckoutSession = asyncHandler(async (req, res) => {
+  const cart = await getCartWithProducts(req.user.id);
+  const normalizedItems = getNormalizedCartItems(cart);
+  const totals = calculateOrderTotals(normalizedItems);
+  const customer = buildCustomer(req.user, req.body);
+  const orderReference = generateOrderNumber();
+  const razorpayOrder = await createRazorpayOrder({
+    amount: amountToPaise(totals.total),
+    currency: "INR",
+    receipt: generateRazorpayReceipt(),
+    notes: {
+      order_reference: orderReference,
+      customer_name: customer.fullName.slice(0, 40),
+      customer_phone: customer.phoneNumber.slice(0, 15),
+    },
+  });
+
   res.status(201).json({
     success: true,
-    message: "Order created successfully",
-    data: serializeOrder(order),
+    message: "Checkout session created successfully",
+    data: {
+      keyId: getRazorpayKeyId(),
+      razorpayOrderId: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      orderReference,
+      subtotal: totals.subtotal,
+      discount: totals.discount,
+      shipping: totals.shipping,
+      tax: totals.tax,
+      total: totals.total,
+    },
+  });
+});
+
+export const verifyOrderPayment = asyncHandler(async (req, res) => {
+  const existingOrder = await Order.findOne({
+    "payment.razorpayPaymentId": req.body.razorpayPaymentId,
+    user: req.user.id,
+  });
+
+  if (existingOrder) {
+    res.json({
+      success: true,
+      message: "Order payment already verified",
+      data: serializeOrderRecord(existingOrder),
+    });
+    return;
+  }
+
+  if (
+    !verifyRazorpaySignature({
+      razorpayOrderId: req.body.razorpayOrderId,
+      razorpayPaymentId: req.body.razorpayPaymentId,
+      razorpaySignature: req.body.razorpaySignature,
+    })
+  ) {
+    throw new AppError("Razorpay payment signature is invalid", 400);
+  }
+
+  const cart = await getCartWithProducts(req.user.id);
+  const normalizedItems = getNormalizedCartItems(cart);
+  const totals = calculateOrderTotals(normalizedItems);
+  const expectedAmountInPaise = amountToPaise(totals.total);
+
+  let paymentDetails = await fetchRazorpayPayment(req.body.razorpayPaymentId);
+
+  if (paymentDetails.order_id !== req.body.razorpayOrderId) {
+    throw new AppError("Razorpay payment does not belong to this checkout session", 400);
+  }
+
+  if (Number(paymentDetails.amount) !== expectedAmountInPaise) {
+    throw new AppError("Paid amount does not match the current cart total", 400);
+  }
+
+  if (paymentDetails.status === "authorized") {
+    paymentDetails = await captureRazorpayPayment(
+      req.body.razorpayPaymentId,
+      expectedAmountInPaise,
+      paymentDetails.currency || "INR",
+    );
+  }
+
+  if (paymentDetails.status !== "captured") {
+    throw new AppError("Payment was not captured successfully", 400, {
+      razorpayStatus: paymentDetails.status,
+    });
+  }
+
+  const customer = buildCustomer(req.user, req.body);
+  const order = await persistPaidOrder({
+    user: req.user,
+    cart,
+    customer,
+    items: normalizedItems,
+    totals,
+    notes: String(req.body.notes || "").trim(),
+    payment: {
+      provider: "razorpay",
+      status: "paid",
+      currency: String(paymentDetails.currency || "INR").toUpperCase(),
+      amount: totals.total,
+      razorpayOrderId: req.body.razorpayOrderId,
+      razorpayPaymentId: req.body.razorpayPaymentId,
+      razorpaySignature: req.body.razorpaySignature,
+      paidAt: paymentDetails.captured_at
+        ? new Date(Number(paymentDetails.captured_at) * 1000)
+        : new Date(),
+      verifiedAt: new Date(),
+    },
+  });
+
+  res.status(201).json({
+    success: true,
+    message: "Order payment verified successfully",
+    data: serializeOrderRecord(order),
   });
 });
 
@@ -160,7 +307,7 @@ export const getMyOrders = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: orders.map(serializeOrder),
+    data: orders.map(serializeOrderRecord),
   });
 });
 
@@ -174,9 +321,11 @@ export const getMyOrderById = asyncHandler(async (req, res) => {
     throw new AppError("Order not found", 404);
   }
 
+  const hydratedOrder = await attachReviewsToOrder(order, req.user.id);
+
   res.json({
     success: true,
-    data: await attachReviewsToOrder(order, req.user.id),
+    data: serializeOrderRecord(hydratedOrder),
   });
 });
 
@@ -200,7 +349,7 @@ export const cancelMyOrder = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: "Order cancelled successfully",
-    data: serializeOrder(order),
+    data: serializeOrderRecord(order),
   });
 });
 
@@ -233,6 +382,28 @@ export const requestOrderReturn = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: "Replacement request submitted successfully",
-    data: serializeOrder(order),
+    data: serializeOrderRecord(order),
+  });
+});
+
+export const markMyOrderWhatsappShared = asyncHandler(async (req, res) => {
+  const order = await Order.findOne({
+    _id: req.params.orderId,
+    user: req.user.id,
+  });
+
+  if (!order) {
+    throw new AppError("Order not found", 404);
+  }
+
+  if (!order.whatsappSharedAt) {
+    order.whatsappSharedAt = new Date();
+    await order.save();
+  }
+
+  res.json({
+    success: true,
+    message: "Order WhatsApp share recorded successfully",
+    data: serializeOrderRecord(order),
   });
 });

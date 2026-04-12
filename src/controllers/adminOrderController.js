@@ -7,6 +7,7 @@ import {
   reserveOrderItemsStock,
   restoreOrderItemsStock,
 } from "../utils/orderStock.js";
+import { serializeOrderRecord } from "../utils/serializeOrder.js";
 
 async function adjustStockForStatusChange(order, nextStatus) {
   if (order.status === nextStatus) {
@@ -63,7 +64,7 @@ export const getAdminOrders = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: orders.map((order) => order.toJSON()),
+    data: orders.map(serializeOrderRecord),
   });
 });
 
@@ -76,7 +77,7 @@ export const getAdminOrderById = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: order.toJSON(),
+    data: serializeOrderRecord(order),
   });
 });
 
@@ -104,7 +105,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: "Order status updated successfully",
-    data: order.toJSON(),
+    data: serializeOrderRecord(order),
   });
 });
 
@@ -154,6 +155,6 @@ export const updateReturnStatus = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: "Replacement status updated successfully",
-    data: order.toJSON(),
+    data: serializeOrderRecord(order),
   });
 });

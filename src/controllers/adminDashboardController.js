@@ -2,6 +2,7 @@ import { Order } from "../models/Order.js";
 import { Product } from "../models/Product.js";
 import { User } from "../models/User.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { serializeOrderRecord } from "../utils/serializeOrder.js";
 
 export const getDashboardSummary = asyncHandler(async (_req, res) => {
   const [
@@ -25,6 +26,7 @@ export const getDashboardSummary = asyncHandler(async (_req, res) => {
         {
           $match: {
             status: { $ne: "cancelled" },
+            "payment.status": "paid",
           },
         },
         {
@@ -55,7 +57,7 @@ export const getDashboardSummary = asyncHandler(async (_req, res) => {
         returnRequests: returnRequestCount,
         totalRevenue: revenueStats[0]?.revenue || 0,
       },
-      recentOrders: recentOrders.map((order) => order.toJSON()),
+      recentOrders: recentOrders.map(serializeOrderRecord),
       orderStatusBreakdown: statusCounts.reduce((accumulator, item) => {
         accumulator[item._id] = item.count;
         return accumulator;

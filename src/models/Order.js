@@ -1,5 +1,9 @@
 import mongoose from "mongoose";
-import { ORDER_STATUSES, RETURN_STATUSES } from "../constants/order.js";
+import {
+  ORDER_STATUSES,
+  PAYMENT_STATUSES,
+  RETURN_STATUSES,
+} from "../constants/order.js";
 import { baseSchemaOptions } from "../utils/schemaOptions.js";
 
 const orderItemSchema = new mongoose.Schema(
@@ -191,8 +195,55 @@ const orderSchema = new mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      default: "cod",
+      default: "razorpay",
       trim: true,
+    },
+    payment: {
+      provider: {
+        type: String,
+        default: "razorpay",
+        trim: true,
+      },
+      status: {
+        type: String,
+        enum: PAYMENT_STATUSES,
+        default: "paid",
+      },
+      currency: {
+        type: String,
+        default: "INR",
+        trim: true,
+        uppercase: true,
+      },
+      amount: {
+        type: Number,
+        min: 0,
+        default: 0,
+      },
+      razorpayOrderId: {
+        type: String,
+        trim: true,
+      },
+      razorpayPaymentId: {
+        type: String,
+        trim: true,
+      },
+      razorpaySignature: {
+        type: String,
+        trim: true,
+      },
+      paidAt: {
+        type: Date,
+        default: null,
+      },
+      verifiedAt: {
+        type: Date,
+        default: null,
+      },
+    },
+    whatsappSharedAt: {
+      type: Date,
+      default: null,
     },
     notes: {
       type: String,
@@ -204,5 +255,7 @@ const orderSchema = new mongoose.Schema(
 );
 
 orderSchema.index({ createdAt: -1 });
+orderSchema.index({ "payment.razorpayPaymentId": 1 }, { unique: true, sparse: true });
+orderSchema.index({ "payment.razorpayOrderId": 1 });
 
 export const Order = mongoose.model("Order", orderSchema);

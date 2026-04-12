@@ -17,6 +17,14 @@ export const RETURN_STATUSES = [
   "rejected",
 ];
 
+export const PAYMENT_STATUSES = [
+  "created",
+  "authorized",
+  "paid",
+  "failed",
+  "refunded",
+];
+
 export const REPLACEMENT_REASONS = [
   "Product is defective",
   "Product was damaged in transit",
